@@ -11,6 +11,26 @@ const GEMINI_TTS_MODELS = [
   "gemini-2.5-pro-preview-tts",
 ].filter((m, i, all): m is string => Boolean(m) && all.indexOf(m) === i);
 
+function fadePcm16(pcm: Buffer, sampleRate: number): Buffer {
+  const even = pcm.subarray(0, pcm.length - (pcm.length % 2));
+  const samples = even.length / 2;
+  if (samples < 8) return Buffer.from(even);
+  const out = Buffer.from(even);
+  const fade = Math.min(Math.floor(sampleRate * 0.018), Math.floor(samples / 6));
+  for (let i = 0; i < fade; i++) {
+    const g = 0.5 - 0.5 * Math.cos((Math.PI * i) / fade);
+    const s = Math.round(out.readInt16LE(i * 2) * g);
+    out.writeInt16LE(Math.max(-32767, Math.min(32767, s)), i * 2);
+  }
+  for (let i = 0; i < fade; i++) {
+    const g = 0.5 - 0.5 * Math.cos((Math.PI * i) / fade);
+    const o = (samples - 1 - i) * 2;
+    const s = Math.round(out.readInt16LE(o) * g);
+    out.writeInt16LE(Math.max(-32767, Math.min(32767, s)), o);
+  }
+  return out;
+}
+
 function pcm16ToWav(pcm: Buffer, sampleRate: number): Buffer {
   const header = Buffer.alloc(44);
   header.write("RIFF", 0);
@@ -91,12 +111,14 @@ async function geminiSpeech(text: string): Promise<TtsResult> {
       if (!inline?.data) continue;
       const mime = inline.mimeType || "audio/L16;codec=pcm;rate=24000";
       const raw = Buffer.from(inline.data, "base64");
-      if (/wav|mpeg|mp3|ogg/i.test(mime)) {
-        return { ok: true, bytes: raw, contentType: mime };
+      const rate = sampleRateFromMime(mime);
+      const faded = fadePcm16(raw, rate);
+      if (/wav|mpeg|mp3|ogg/i.test(mime) && !/L16/i.test(mime)) {
+        return { ok: true, bytes: faded, contentType: mime };
       }
       return {
         ok: true,
-        bytes: pcm16ToWav(raw, sampleRateFromMime(mime)),
+        bytes: pcm16ToWav(faded, rate),
         contentType: "audio/wav",
       };
     } catch {

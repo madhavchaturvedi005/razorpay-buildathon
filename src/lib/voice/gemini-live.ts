@@ -25,15 +25,6 @@ export function unlockPlayback() {
   if (typeof window === "undefined") return;
   if (!unlockedCtx) unlockedCtx = new AudioContext();
   if (unlockedCtx.state === "suspended") void unlockedCtx.resume();
-  const buf = unlockedCtx.createBuffer(1, 1, unlockedCtx.sampleRate || 44100);
-  const src = unlockedCtx.createBufferSource();
-  const mute = unlockedCtx.createGain();
-  mute.gain.value = 0;
-  src.buffer = buf;
-  src.connect(mute);
-  mute.connect(unlockedCtx.destination);
-  try { src.start(0); } catch { /* already started */ }
-  ttsEl?.pause();
 }
 
 export function playbackAudioElement(): HTMLAudioElement {
@@ -86,7 +77,15 @@ function downsample(input: Float32Array, fromRate: number, toRate: number): Floa
   return out;
 }
 
-class PcmPlayer {
+function fadeEdges(data: Float32Array, samples = 96) {
+  const n = Math.min(samples, Math.floor(data.length / 6));
+  if (n < 2) return;
+  for (let i = 0; i < n; i++) {
+    const g = 0.5 - 0.5 * Math.cos((Math.PI * i) / n);
+    data[i] *= g;
+    data[data.length - 1 - i] *= g;
+  }
+}
   private ctx: AudioContext;
   private gain: GainNode;
   private next = 0;
@@ -108,6 +107,7 @@ class PcmPlayer {
     if (!pcm.length) return;
     if (this.ctx.state === "suspended") void this.ctx.resume();
     const data = pcm16ToFloat(pcm);
+    fadeEdges(data);
     let buf: AudioBuffer;
     try {
       buf = this.ctx.createBuffer(1, data.length, OUTPUT_RATE);
@@ -119,13 +119,27 @@ class PcmPlayer {
     src.buffer = buf;
     src.connect(this.gain);
     const now = this.ctx.currentTime;
-    if (this.next < now) this.next = now;
+    const gap = this.next < now - 0.02;
+    if (gap) {
+      // Hard restart after a gap is the click/beep between phrases.
+      this.gain.gain.cancelScheduledValues(now);
+      this.gain.gain.setValueAtTime(0, now);
+      this.gain.gain.linearRampToValueAtTime(1, now + 0.02);
+      this.next = now + 0.02;
+    } else if (this.next < now) {
+      this.next = now;
+    }
     src.start(this.next);
     this.next += buf.duration;
   }
 
   interrupt() {
-    this.next = this.ctx.currentTime;
+    const now = this.ctx.currentTime;
+    this.gain.gain.cancelScheduledValues(now);
+    this.gain.gain.setValueAtTime(this.gain.gain.value, now);
+    this.gain.gain.linearRampToValueAtTime(0, now + 0.03);
+    this.gain.gain.setValueAtTime(1, now + 0.04);
+    this.next = now + 0.04;
   }
 
   close() {
@@ -158,11 +172,10 @@ function startMic(onPcm: (pcm: Int16Array) => void): { stop: () => void } {
       const resampled = downsample(input, ctx!.sampleRate, INPUT_RATE);
       onPcm(floatToPcm16(resampled));
     };
-    const mute = ctx.createGain();
-    mute.gain.value = 0;
+    // Keep the processor alive without routing mic to speakers (that path clicks).
+    const sink = ctx.createMediaStreamDestination();
     src.connect(proc);
-    proc.connect(mute);
-    mute.connect(ctx.destination);
+    proc.connect(sink);
   })();
 
   return {

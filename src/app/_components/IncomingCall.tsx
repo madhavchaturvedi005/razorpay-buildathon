@@ -198,7 +198,16 @@ export function IncomingCall({
           if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
           a.volume = 1;
           a.src = url;
-          await a.play();
+          await new Promise<void>(resolve => {
+            const done = () => {
+              a.removeEventListener("ended", done);
+              a.removeEventListener("error", done);
+              resolve();
+            };
+            a.addEventListener("ended", done, { once: true });
+            a.addEventListener("error", done, { once: true });
+            a.play().catch(done);
+          });
           return;
         }
       }

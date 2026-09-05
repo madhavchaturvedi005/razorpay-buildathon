@@ -4,6 +4,7 @@ import { continueCall, openCall } from "@/lib/engine/apply-call";
 import { extractPtpWithLlm, llmConfig, llmConfigured } from "@/lib/engine/llm";
 import { geminiConfigured, geminiLiveModel } from "@/lib/engine/gemini";
 import { mintLiveSession } from "@/lib/voice/mint-live-session";
+import { synthesizeSpeech } from "@/lib/voice/tts";
 import { CANNED_CALLS } from "@/lib/engine/ptp";
 import { evaluatePtpPolicy } from "@/lib/engine/ptp-policy";
 import { writeAuditLog, writeBlockedAuditLog } from "@/lib/engine/audit";
@@ -162,21 +163,11 @@ export function mountVoice(app: Hono) {
     const body = await c.req.json().catch(() => ({})) as { text?: string };
     const text = body.text?.trim();
     if (!text) return c.json({ error: "text required" }, 400);
-    if (!llmConfigured()) return c.json({ fallback: true });
-    const { key, base } = llmConfig();
-    const res = await fetch(`${base}/audio/speech`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: process.env.LLM_TTS_MODEL || "tts-1",
-        voice: process.env.LLM_TTS_VOICE || "nova",
-        input: text.slice(0, 4000),
-      }),
-    });
-    if (!res.ok) return c.json({ fallback: true });
-    return new Response(await res.arrayBuffer(), {
+    const spoken = await synthesizeSpeech(text);
+    if (!spoken.ok) return c.json({ fallback: true });
+    return new Response(new Uint8Array(spoken.bytes), {
       headers: {
-        "Content-Type": res.headers.get("content-type") || "audio/mpeg",
+        "Content-Type": spoken.contentType,
         "Cache-Control": "no-store",
       },
     });

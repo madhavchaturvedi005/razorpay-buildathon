@@ -188,17 +188,19 @@ export function IncomingCall({
         body: JSON.stringify({ text }),
       });
       const ct = res.headers.get("content-type") || "";
-      if (ct.includes("audio")) {
+      if (ct.includes("audio") || ct.includes("octet-stream")) {
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = playbackAudioElement();
-        audioRef.current = a;
-        a.pause();
-        if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
-        a.volume = 1;
-        a.src = url;
-        await a.play();
-        return;
+        if (blob.size > 200) {
+          const url = URL.createObjectURL(blob);
+          const a = playbackAudioElement();
+          audioRef.current = a;
+          a.pause();
+          if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
+          a.volume = 1;
+          a.src = url;
+          await a.play();
+          return;
+        }
       }
     } catch { /* browser TTS */ }
     if (!heardLiveAudio.current) speakBrowser(text);

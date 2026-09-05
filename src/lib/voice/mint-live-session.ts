@@ -14,10 +14,6 @@ function constrainedUrl(token: string): string {
   return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${value}`;
 }
 
-function keyUrl(version: "v1alpha" | "v1beta", key: string): string {
-  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${version}.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(key)}`;
-}
-
 async function mintEphemeralToken(key: string): Promise<string | null> {
   const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const newSessionExpireTime = new Date(Date.now() + 2 * 60 * 1000).toISOString();
@@ -91,26 +87,25 @@ export async function mintLiveSession(body: {
   const models = geminiLiveModelCandidates().slice(0, 2);
   const token = await mintEphemeralToken(key);
   const attempts: LiveAttempt[] = [];
-  const primary = models[0];
-  if (primary) {
-    const slim = slimSetup(geminiLiveSetup({ ...ctx, model: primary }));
-    if (token) {
-      attempts.push({ ws_url: constrainedUrl(token), setup: slim, model: primary, via: "token-v1alpha" });
+  // Never ship the raw API key to the browser WebSocket. Railway / production
+  // origins get blocked by AI Studio referrer rules, and the key would leak.
+  if (token) {
+    for (const model of models) {
+      const slim = slimSetup(geminiLiveSetup({ ...ctx, model }));
+      attempts.push({ ws_url: constrainedUrl(token), setup: slim, model, via: "token-v1alpha" });
     }
-  }
-  for (const model of models) {
-    const slim = slimSetup(geminiLiveSetup({ ...ctx, model }));
-    attempts.push({ ws_url: keyUrl("v1alpha", key), setup: slim, model, via: "key-v1alpha" });
-    attempts.push({ ws_url: keyUrl("v1beta", key), setup: slim, model, via: "key-v1beta" });
   }
 
   const first = attempts[0];
   if (!first) {
-    return { error: "Gemini Live session failed", detail: "No connection attempts could be built." };
+    return {
+      error: "Gemini Live websocket unavailable",
+      detail: "Ephemeral token mint failed. Call audio will use server TTS instead of a browser Live socket.",
+    };
   }
 
   return {
-    token: token || key,
+    token,
     model: geminiLiveModel(),
     ws_url: first.ws_url,
     setup: first.setup,

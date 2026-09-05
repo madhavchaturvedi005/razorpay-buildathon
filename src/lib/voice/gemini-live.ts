@@ -19,6 +19,7 @@ export type GeminiLiveEvent =
 
 let unlockedCtx: AudioContext | null = null;
 let ttsEl: HTMLAudioElement | null = null;
+let stopCurrentTts: (() => void) | null = null;
 
 /** Must run in the same tick as a user click or the browser will mute playback. */
 export function unlockPlayback() {
@@ -30,6 +31,71 @@ export function unlockPlayback() {
 export function playbackAudioElement(): HTMLAudioElement {
   if (!ttsEl) ttsEl = new Audio();
   return ttsEl;
+}
+
+export function stopTtsPlayback() {
+  stopCurrentTts?.();
+  stopCurrentTts = null;
+  ttsEl?.pause();
+  if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+}
+
+/** Play a server WAV/MP3 clip through Web Audio so clip edges do not click. */
+export async function playTtsBlob(blob: Blob): Promise<void> {
+  unlockPlayback();
+  stopTtsPlayback();
+  const ctx = unlockedCtx;
+  if (!ctx) return;
+  try {
+    const copy = blob.arrayBuffer ? await blob.arrayBuffer() : await new Response(blob).arrayBuffer();
+    const buf = await ctx.decodeAudioData(copy.slice(0));
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = buf;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    const now = ctx.currentTime;
+    const fade = Math.min(0.025, buf.duration / 6);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1, now + fade);
+    if (buf.duration > fade * 2) {
+      gain.gain.setValueAtTime(1, now + buf.duration - fade);
+      gain.gain.linearRampToValueAtTime(0, now + buf.duration);
+    }
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        if (stopCurrentTts === stop) stopCurrentTts = null;
+        try { gain.disconnect(); } catch { /* already closed */ }
+        resolve();
+      };
+      const stop = () => {
+        try { src.stop(); } catch { /* already stopped */ }
+        done();
+      };
+      stopCurrentTts = stop;
+      src.onended = done;
+      try { src.start(now); } catch (err) { reject(err); }
+    });
+  } catch {
+    const url = URL.createObjectURL(blob);
+    const a = playbackAudioElement();
+    if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
+    a.src = url;
+    a.volume = 1;
+    await new Promise<void>(resolve => {
+      const done = () => {
+        a.removeEventListener("ended", done);
+        a.removeEventListener("error", done);
+        resolve();
+      };
+      a.addEventListener("ended", done, { once: true });
+      a.addEventListener("error", done, { once: true });
+      a.play().catch(done);
+    });
+  }
 }
 
 function floatToPcm16(float32: Float32Array): Int16Array {
@@ -68,28 +134,32 @@ function pcmFromBase64(b64: string): Int16Array {
   return new Int16Array(copy);
 }
 
-function downsample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+function resample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
   if (fromRate === toRate) return input;
   const ratio = fromRate / toRate;
-  const outLen = Math.max(1, Math.floor(input.length / ratio));
+  const outLen = Math.max(1, Math.round(input.length / ratio));
   const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) out[i] = input[Math.min(input.length - 1, Math.floor(i * ratio))];
+  for (let i = 0; i < outLen; i++) {
+    const src = i * ratio;
+    const i0 = Math.min(input.length - 1, Math.floor(src));
+    const i1 = Math.min(input.length - 1, i0 + 1);
+    const frac = src - i0;
+    out[i] = input[i0] * (1 - frac) + input[i1] * frac;
+  }
   return out;
 }
 
-function fadeEdges(data: Float32Array, samples = 96) {
-  const n = Math.min(samples, Math.floor(data.length / 6));
-  if (n < 2) return;
-  for (let i = 0; i < n; i++) {
-    const g = 0.5 - 0.5 * Math.cos((Math.PI * i) / n);
-    data[i] *= g;
-    data[data.length - 1 - i] *= g;
-  }
-}
+/** Pull-based player: Live chunks join into one stream so gaps are silence, not a beep. */
+class PcmPlayer {
   private ctx: AudioContext;
   private gain: GainNode;
-  private next = 0;
+  private node: ScriptProcessorNode;
+  private silentIn: ConstantSourceNode;
   private ownsCtx: boolean;
+  private queue: Float32Array[] = [];
+  private offset = 0;
+  private last = 0;
+  private fadeIn = 0;
 
   constructor() {
     this.ownsCtx = !unlockedCtx;
@@ -97,6 +167,13 @@ function fadeEdges(data: Float32Array, samples = 96) {
     this.gain = this.ctx.createGain();
     this.gain.gain.value = 1;
     this.gain.connect(this.ctx.destination);
+    this.node = this.ctx.createScriptProcessor(2048, 1, 1);
+    this.node.onaudioprocess = e => this.pull(e.outputBuffer.getChannelData(0));
+    this.silentIn = this.ctx.createConstantSource();
+    this.silentIn.offset.value = 0;
+    this.silentIn.connect(this.node);
+    this.node.connect(this.gain);
+    this.silentIn.start();
   }
 
   async resume() {
@@ -106,44 +183,66 @@ function fadeEdges(data: Float32Array, samples = 96) {
   enqueue(pcm: Int16Array) {
     if (!pcm.length) return;
     if (this.ctx.state === "suspended") void this.ctx.resume();
-    const data = pcm16ToFloat(pcm);
-    fadeEdges(data);
-    let buf: AudioBuffer;
-    try {
-      buf = this.ctx.createBuffer(1, data.length, OUTPUT_RATE);
-    } catch {
-      buf = this.ctx.createBuffer(1, data.length, this.ctx.sampleRate);
+    const data = resample(pcm16ToFloat(pcm), OUTPUT_RATE, this.ctx.sampleRate);
+    if (!this.queue.length && this.offset === 0) {
+      this.fadeIn = Math.min(data.length, Math.floor(this.ctx.sampleRate * 0.012));
     }
-    buf.getChannelData(0).set(data);
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(this.gain);
-    const now = this.ctx.currentTime;
-    const gap = this.next < now - 0.02;
-    if (gap) {
-      // Hard restart after a gap is the click/beep between phrases.
-      this.gain.gain.cancelScheduledValues(now);
-      this.gain.gain.setValueAtTime(0, now);
-      this.gain.gain.linearRampToValueAtTime(1, now + 0.02);
-      this.next = now + 0.02;
-    } else if (this.next < now) {
-      this.next = now;
+    this.queue.push(data);
+  }
+
+  private pull(out: Float32Array) {
+    const fadeLen = Math.max(1, Math.floor(this.ctx.sampleRate * 0.012));
+    for (let i = 0; i < out.length; i++) {
+      const sample = this.pop();
+      if (sample === null) {
+        this.last *= 0.86;
+        out[i] = this.last;
+        continue;
+      }
+      let s = sample;
+      if (this.fadeIn > 0) {
+        const g = 0.5 - 0.5 * Math.cos((Math.PI * (fadeLen - this.fadeIn)) / fadeLen);
+        s *= g;
+        this.fadeIn -= 1;
+      }
+      this.last = s;
+      out[i] = s;
     }
-    src.start(this.next);
-    this.next += buf.duration;
+  }
+
+  private pop(): number | null {
+    while (this.queue.length) {
+      const cur = this.queue[0];
+      if (this.offset < cur.length) {
+        const v = cur[this.offset++];
+        if (this.offset >= cur.length) {
+          this.queue.shift();
+          this.offset = 0;
+        }
+        return v;
+      }
+      this.queue.shift();
+      this.offset = 0;
+    }
+    return null;
   }
 
   interrupt() {
+    this.queue = [];
+    this.offset = 0;
+    this.fadeIn = 0;
     const now = this.ctx.currentTime;
     this.gain.gain.cancelScheduledValues(now);
     this.gain.gain.setValueAtTime(this.gain.gain.value, now);
-    this.gain.gain.linearRampToValueAtTime(0, now + 0.03);
-    this.gain.gain.setValueAtTime(1, now + 0.04);
-    this.next = now + 0.04;
+    this.gain.gain.linearRampToValueAtTime(0, now + 0.02);
+    this.gain.gain.linearRampToValueAtTime(1, now + 0.04);
   }
 
   close() {
-    this.next = 0;
+    this.queue = [];
+    this.offset = 0;
+    try { this.silentIn.stop(); } catch { /* already stopped */ }
+    try { this.node.disconnect(); } catch { /* already closed */ }
     try { this.gain.disconnect(); } catch { /* already closed */ }
     if (this.ownsCtx) void this.ctx.close();
   }
@@ -169,7 +268,7 @@ function startMic(onPcm: (pcm: Int16Array) => void): { stop: () => void } {
     proc = ctx.createScriptProcessor(4096, 1, 1);
     proc.onaudioprocess = e => {
       const input = e.inputBuffer.getChannelData(0);
-      const resampled = downsample(input, ctx!.sampleRate, INPUT_RATE);
+      const resampled = resample(input, ctx!.sampleRate, INPUT_RATE);
       onPcm(floatToPcm16(resampled));
     };
     // Keep the processor alive without routing mic to speakers (that path clicks).

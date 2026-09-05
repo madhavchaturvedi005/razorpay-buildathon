@@ -5,7 +5,8 @@ import { Phone, PhoneOff, Mic, Send } from "lucide-react";
 import type { OfferType, PtpExtract } from "@/lib/types";
 import {
   connectGeminiLive,
-  playbackAudioElement,
+  playTtsBlob,
+  stopTtsPlayback,
   unlockPlayback,
   type GeminiLiveHandle,
 } from "@/lib/voice/gemini-live";
@@ -152,7 +153,7 @@ export function IncomingCall({
       window.clearTimeout(ttsWatch.current);
       ttsWatch.current = null;
     }
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    stopTtsPlayback();
     audioRef.current?.pause();
     liveRef.current?.close();
     liveRef.current = null;
@@ -191,23 +192,7 @@ export function IncomingCall({
       if (ct.includes("audio") || ct.includes("octet-stream")) {
         const blob = await res.blob();
         if (blob.size > 200) {
-          const url = URL.createObjectURL(blob);
-          const a = playbackAudioElement();
-          audioRef.current = a;
-          a.pause();
-          if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
-          a.volume = 1;
-          a.src = url;
-          await new Promise<void>(resolve => {
-            const done = () => {
-              a.removeEventListener("ended", done);
-              a.removeEventListener("error", done);
-              resolve();
-            };
-            a.addEventListener("ended", done, { once: true });
-            a.addEventListener("error", done, { once: true });
-            a.play().catch(done);
-          });
+          await playTtsBlob(blob);
           return;
         }
       }
@@ -256,7 +241,6 @@ export function IncomingCall({
 
   async function answer(opts: { mic: boolean }) {
     unlockPlayback();
-    audioRef.current = playbackAudioElement();
     heardLiveAudio.current = false;
     setPhase("talking");
     setBusy(true);
@@ -336,8 +320,7 @@ export function IncomingCall({
       onEvent(ev) {
         if (ev.type === "audio") {
           heardLiveAudio.current = true;
-          audioRef.current?.pause();
-          if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+          stopTtsPlayback();
         }
         if (ev.type === "agent_text") agentDraft.current += ev.text;
         if (ev.type === "user_text") userDraft.current += ev.text;

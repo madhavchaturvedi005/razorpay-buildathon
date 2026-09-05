@@ -9,7 +9,7 @@ import type { AgentLineConfig, CallSession } from "@/lib/types";
 import { inr } from "@/lib/ui/format";
 import { callDurationSec, turnsToRecordingScript } from "@/lib/engine/agent-line";
 import { IncomingCall } from "../_components/IncomingCall";
-import { playbackAudioElement } from "@/lib/voice/gemini-live";
+import { playTtsBlob, stopTtsPlayback } from "@/lib/voice/gemini-live";
 
 interface Target {
   event_id: string;
@@ -96,8 +96,7 @@ export default function AgentLinePage() {
 
   async function playRecording(session: CallSession) {
     if (playing === session.session_id) {
-      playbackAudioElement().pause();
-      window.speechSynthesis?.cancel();
+      stopTtsPlayback();
       setPlaying(null);
       return;
     }
@@ -113,12 +112,8 @@ export default function AgentLinePage() {
       if (ct.includes("audio") || ct.includes("octet-stream")) {
         const blob = await res.blob();
         if (blob.size > 200) {
-          const url = URL.createObjectURL(blob);
-          const a = playbackAudioElement();
-          a.onended = () => setPlaying(null);
-          a.src = url;
-          a.volume = 1;
-          await a.play();
+          await playTtsBlob(blob);
+          setPlaying(null);
           return;
         }
       }

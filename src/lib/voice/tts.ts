@@ -16,7 +16,7 @@ function fadePcm16(pcm: Buffer, sampleRate: number): Buffer {
   const samples = even.length / 2;
   if (samples < 8) return Buffer.from(even);
   const out = Buffer.from(even);
-  const fade = Math.min(Math.floor(sampleRate * 0.018), Math.floor(samples / 6));
+  const fade = Math.min(Math.floor(sampleRate * 0.028), Math.floor(samples / 6));
   for (let i = 0; i < fade; i++) {
     const g = 0.5 - 0.5 * Math.cos((Math.PI * i) / fade);
     const s = Math.round(out.readInt16LE(i * 2) * g);

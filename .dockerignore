@@ -3,7 +3,7 @@ node_modules
 .git
 .env
 .env.*
-data
+/data
 *.log
 .DS_Store
 .vercel

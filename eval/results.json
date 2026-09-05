@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-09-05T14:23:22.855Z",
+  "total_events": 300,
+  "attempted": 274,
+  "baseline_recovered": 38,
+  "orchestrated_recovered": 93,
+  "baseline_rate": 12.7,
+  "orchestrated_rate": 33.9,
+  "lift": 21.2,
+  "seed": 42,
+  "simulated": true,
+  "arms": [
+    {
+      "id": "no_action",
+      "label": "Do nothing",
+      "recovered_count": 9,
+      "recovered_paise": 78968464,
+      "attempted": 300,
+      "rate": 3,
+      "contact_cost_paise": 0,
+      "cost_per_100_recovered": 0,
+      "actions": 0,
+      "violations": 0
+    },
+    {
+      "id": "fixed_retry",
+      "label": "Naive retry (what merchants run)",
+      "recovered_count": 38,
+      "recovered_paise": 220003468,
+      "attempted": 300,
+      "rate": 12.7,
+      "contact_cost_paise": 0,
+      "cost_per_100_recovered": 0,
+      "actions": 300,
+      "violations": 24
+    },
+    {
+      "id": "rule_based",
+      "label": "Playbook only",
+      "recovered_count": 100,
+      "recovered_paise": 542713214,
+      "attempted": 274,
+      "rate": 36.5,
+      "contact_cost_paise": 5495,
+      "cost_per_100_recovered": 0,
+      "actions": 274,
+      "violations": 0
+    },
+    {
+      "id": "orchestrated",
+      "label": "Playbook + EV + mandate stop",
+      "recovered_count": 93,
+      "recovered_paise": 687634296,
+      "attempted": 274,
+      "rate": 33.9,
+      "contact_cost_paise": 5165,
+      "cost_per_100_recovered": 0,
+      "actions": 274,
+      "violations": 0
+    }
+  ],
+  "orchestrated_recovered_paise": 687634296,
+  "baseline_recovered_paise": 220003468
+}

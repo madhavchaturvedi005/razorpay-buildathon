@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  --background: #08090c;
+  --surface: #0d0f14;
+  --surface-2: #12141b;
+  --border: rgba(255, 255, 255, 0.07);
+  --foreground: #f4f5f7;
+  --muted: #8b90a0;
+  --accent: #6366f1;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #f43f5e;
+}
+
+html, body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ambient gradient background */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(900px 500px at 15% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 100% 0%, rgba(16, 185, 129, 0.06), transparent 55%);
+  pointer-events: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2e3a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3f4d; }
+
+/* ── Reusable primitives ─────────────────────────────────────────────── */
+@layer components {
+  .card {
+    @apply rounded-2xl border border-white/[0.07] bg-[#0d0f14]/80 backdrop-blur-sm;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:border-white/[0.14] hover:bg-[#12141b];
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5
+           text-sm font-semibold text-white transition-colors hover:bg-indigo-500
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10
+           bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-gray-300 transition-colors
+           hover:bg-white/[0.06] hover:text-white disabled:opacity-40;
+  }
+  .stat-value {
+    @apply text-2xl font-semibold tracking-tight text-white tabular-nums;
+  }
+}
+
+/* Subtle entrance animation */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 0.4s ease both; }

@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+data
+*.log
+.DS_Store
+.vercel
+.railway
+.cursor
+canvases
+agent-transcripts

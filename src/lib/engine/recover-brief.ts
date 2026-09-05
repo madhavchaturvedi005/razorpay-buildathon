@@ -2,7 +2,7 @@ import type { DiagnosisTag, RecoveryEvent } from "../types";
 import { CALIBRATION } from "../data/calibration";
 import { inr } from "../ui/format";
 
-export type OutreachChannel = "whatsapp" | "email" | "call" | "silent" | "stop";
+export type OutreachChannel = "whatsapp" | "email" | "call" | "all" | "silent" | "stop";
 
 export interface RecoverAction {
   id: OutreachChannel;
@@ -129,17 +129,26 @@ function actionsFor(recommended: OutreachChannel, tag: DiagnosisTag): RecoverAct
     ];
   }
 
+  const all: RecoverAction = {
+    id: "all",
+    label: "All of the above",
+    hint: "WhatsApp + Gmail + agent call together — same payment link on every channel.",
+    recommended: false,
+  };
+
   const light: RecoverAction[] = [
     { id: "whatsapp", label: "WhatsApp nudge", hint: "One-tap UPI / retry link. No call.", recommended: recommended === "whatsapp" },
     { id: "email", label: "Gmail / payment mail", hint: "Payment link in the inbox. Low annoyance.", recommended: recommended === "email" },
     { id: "silent", label: "Silent retry", hint: "Re-hit the gateway. Customer never sees this.", recommended: tag === "gateway_timeout" },
     { id: "call", label: "Agent call", hint: "Ask what happened. Offer EMI or a discount.", recommended: false },
+    all,
   ];
 
   const heavy: RecoverAction[] = [
     { id: "call", label: "Agent call", hint: "Diagnose the issue live. Convince with EMI / coupon.", recommended: recommended === "call" },
     { id: "whatsapp", label: "WhatsApp instead", hint: "Send the offer in chat if you do not want to call.", recommended: false },
     { id: "email", label: "Gmail instead", hint: "Mail the payment link + discount copy.", recommended: false },
+    all,
   ];
 
   return recommended === "call" ? heavy : light;
@@ -265,8 +274,8 @@ export function buildRecoverBrief(event: RecoveryEvent): RecoverBrief {
 
   const commentChips =
     recommendedChannel === "call"
-      ? ["Try agent call", "Offer 10% if they hesitate", "Ask payday first", "WhatsApp only — no call"]
-      : ["WhatsApp only — no call", "Mail the UPI link", "Silent retry, don't contact", "Escalate to agent call"];
+      ? ["Try agent call", "All of the above", "Ask payday first", "WhatsApp only — no call"]
+      : ["WhatsApp only — no call", "Mail the UPI link", "All of the above", "Escalate to agent call"];
 
   return {
     diagnosis,

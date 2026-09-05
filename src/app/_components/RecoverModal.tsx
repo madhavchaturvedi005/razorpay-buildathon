@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   Sparkles, Phone, Mail, MessageCircle, ShieldAlert, X, Zap,
-  Check, Loader2, Volume2, CreditCard,
+  Check, Loader2, Volume2, CreditCard, Layers,
 } from "lucide-react";
 import type { RecoveryEvent } from "@/lib/types";
 import { inr } from "@/lib/ui/format";
@@ -57,9 +57,11 @@ export function RecoverModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const playsCall = channel === "call" || channel === "all";
+
   useEffect(() => {
     if (phase !== "outreach") return;
-    if (channel !== "call") return;
+    if (!playsCall) return;
     setBeat(1);
     const id = window.setInterval(() => {
       setBeat(b => {
@@ -72,14 +74,14 @@ export function RecoverModal({
     }, 900);
     const done = window.setTimeout(() => setPhase("done"), 900 * (brief.callBeats.length + 2));
     return () => { window.clearInterval(id); window.clearTimeout(done); };
-  }, [phase, channel, brief.callBeats.length]);
+  }, [phase, playsCall, brief.callBeats.length]);
 
   useEffect(() => {
     if (phase !== "outreach") return;
-    if (channel === "call") return;
+    if (playsCall) return;
     const t = window.setTimeout(() => setPhase("done"), channel === "silent" ? 1200 : 2200);
     return () => window.clearTimeout(t);
-  }, [phase, channel]);
+  }, [phase, channel, playsCall]);
 
   async function proceed() {
     setPhase("running");
@@ -180,13 +182,21 @@ export function RecoverModal({
                       : action.id === "email" ? Mail
                         : action.id === "whatsapp" ? MessageCircle
                           : action.id === "silent" ? Zap
+                            : action.id === "all" ? Layers
                             : ShieldAlert;
                     return (
                       <button
                         key={action.id}
                         type="button"
-                        onClick={() => setChannel(action.id)}
+                        onClick={() => {
+                          setChannel(action.id);
+                          if (action.id === "all") {
+                            setComment("All of the above — WhatsApp, Gmail, and agent call.");
+                          }
+                        }}
                         className={`rounded-xl border p-3 text-left transition-colors ${
+                          action.id === "all" ? "sm:col-span-2 " : ""
+                        }${
                           active
                             ? "border-indigo-400/50 bg-indigo-500/10"
                             : "border-white/10 bg-white/[0.02] hover:border-white/20"
@@ -215,7 +225,13 @@ export function RecoverModal({
                     <button
                       key={chip}
                       type="button"
-                      onClick={() => setComment(chip)}
+                      onClick={() => {
+                        setComment(chip);
+                        if (chip.toLowerCase().includes("all of the above")) {
+                          setChannel("all");
+                          setComment("All of the above — WhatsApp, Gmail, and agent call.");
+                        }
+                      }}
                       className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                         comment === chip
                           ? "border-indigo-400/40 bg-indigo-500/15 text-indigo-200"
@@ -285,6 +301,8 @@ export function RecoverModal({
                             ? "Escalated to a human"
                             : channel === "stop"
                               ? "No outreach sent"
+                              : channel === "all"
+                                ? "WhatsApp, Gmail, and agent call dispatched."
                               : "Play dispatched. Waiting on the customer."}
                   </span>
                 </div>
@@ -303,7 +321,11 @@ export function RecoverModal({
               <button onClick={onClose} className="btn-ghost !py-2 !px-3 text-xs">Cancel</button>
               <button onClick={proceed} className="btn-primary !py-2 !px-4 text-xs">
                 <Sparkles className="h-3.5 w-3.5" />
-                {channel === "stop" ? "Log stop" : "Proceed with this play"}
+                {channel === "stop"
+                  ? "Log stop"
+                  : channel === "all"
+                    ? "Proceed with WhatsApp, Gmail & call"
+                    : "Proceed with this play"}
               </button>
             </>
           )}
@@ -362,88 +384,134 @@ function OutreachMock({
     );
   }
 
-  if (channel === "email") {
+  if (channel === "all") {
     return (
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#111318]">
-        <div className="flex items-center gap-2 border-b border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-gray-400">
-          <Mail className="h-3.5 w-3.5 text-sky-300" /> Gmail · Inbox
-        </div>
-        <div className="space-y-2 px-4 py-3 text-sm">
-          <div className="text-xs text-gray-500">From recover@{`lumen.store`} · to {event.customer_email}</div>
-          <div className="font-medium text-white">{brief.emailSubject}</div>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-300">{brief.emailBody}</p>
-          {settled && (
-            <p className={`text-[11px] ${blocked ? "text-amber-300" : "text-emerald-400"}`}>
-              {blocked ? "Preview only — live send was blocked by a guardrail" : "Mock delivered to Gmail"}
-            </p>
-          )}
-        </div>
+      <div className="space-y-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+          All channels · WhatsApp, Gmail, call
+        </p>
+        <WhatsAppPreview brief={brief} event={event} settled={settled} blocked={blocked} />
+        <EmailPreview brief={brief} event={event} settled={settled} blocked={blocked} />
+        <CallPreview brief={brief} event={event} beat={beat} settled={settled} />
       </div>
     );
+  }
+
+  if (channel === "email") {
+    return <EmailPreview brief={brief} event={event} settled={settled} blocked={blocked} />;
   }
 
   if (channel === "whatsapp") {
-    return (
-      <div className="overflow-hidden rounded-xl border border-emerald-900/40 bg-[#0b1410]">
-        <div className="flex items-center gap-2 bg-[#075E54] px-4 py-2.5 text-sm text-white">
-          <MessageCircle className="h-4 w-4" />
-          <div>
-            <div className="text-xs font-semibold">Lumen Store</div>
-            <div className="text-[10px] text-emerald-100/80">WhatsApp Business · {event.customer_phone}</div>
-          </div>
-        </div>
-        <div className="px-4 py-4">
-          <div className="ml-auto max-w-[90%] rounded-2xl rounded-tr-sm bg-[#005c4b] px-3 py-2 text-sm leading-relaxed text-white">
-            {brief.whatsapp}
-          </div>
-          {settled && (
-            <p className={`mt-3 text-[11px] ${blocked ? "text-amber-300" : "text-emerald-400"}`}>
-              {blocked ? "Preview only — live send was blocked by a guardrail" : "Mock delivered on WhatsApp"}
-            </p>
-          )}
-        </div>
-      </div>
-    );
+    return <WhatsAppPreview brief={brief} event={event} settled={settled} blocked={blocked} />;
   }
 
   if (channel === "call") {
-    const shown = brief.callBeats.slice(0, Math.max(beat, settled ? brief.callBeats.length : 0));
-    return (
-      <div className="overflow-hidden rounded-xl border border-indigo-500/20 bg-[#0e1018]">
-        <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20">
-            <Volume2 className="h-4 w-4 text-indigo-300" />
-          </div>
-          <div>
-            <div className="text-sm font-medium text-white">Live agent call · {event.customer_name}</div>
-            <div className="text-[11px] text-gray-500">{event.customer_phone} · Hinglish recovery</div>
-          </div>
-          {!settled && <span className="ml-auto animate-pulse text-[11px] text-emerald-400">Connected</span>}
-        </div>
-        <div className="space-y-2 px-4 py-3">
-          {shown.map((line, i) => (
-            <div key={i} className={`flex ${line.who === "agent" ? "justify-start" : "justify-end"}`}>
-              <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                line.who === "agent"
-                  ? "rounded-tl-sm bg-white/10 text-gray-100"
-                  : "rounded-tr-sm bg-indigo-600 text-white"
-              }`}>
-                <div className="mb-0.5 text-[10px] uppercase tracking-wide opacity-60">{line.who}</div>
-                {line.text}
-              </div>
-            </div>
-          ))}
-          {brief.offer && settled && (
-            <p className="pt-1 text-[11px] text-amber-300">Offer on the table: {brief.offer}</p>
-          )}
-        </div>
-      </div>
-    );
+    return <CallPreview brief={brief} event={event} beat={beat} settled={settled} />;
   }
 
   return (
     <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
       No customer message was sent.
+    </div>
+  );
+}
+
+function EmailPreview({
+  brief, event, settled, blocked,
+}: {
+  brief: ReturnType<typeof buildRecoverBrief>;
+  event: RecoveryEvent;
+  settled?: boolean;
+  blocked?: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#111318]">
+      <div className="flex items-center gap-2 border-b border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-gray-400">
+        <Mail className="h-3.5 w-3.5 text-sky-300" /> Gmail · Inbox
+      </div>
+      <div className="space-y-2 px-4 py-3 text-sm">
+        <div className="text-xs text-gray-500">From recover@{`lumen.store`} · to {event.customer_email}</div>
+        <div className="font-medium text-white">{brief.emailSubject}</div>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-300">{brief.emailBody}</p>
+        {settled && (
+          <p className={`text-[11px] ${blocked ? "text-amber-300" : "text-emerald-400"}`}>
+            {blocked ? "Preview only — live send was blocked by a guardrail" : "Mock delivered to Gmail"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WhatsAppPreview({
+  brief, event, settled, blocked,
+}: {
+  brief: ReturnType<typeof buildRecoverBrief>;
+  event: RecoveryEvent;
+  settled?: boolean;
+  blocked?: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-emerald-900/40 bg-[#0b1410]">
+      <div className="flex items-center gap-2 bg-[#075E54] px-4 py-2.5 text-sm text-white">
+        <MessageCircle className="h-4 w-4" />
+        <div>
+          <div className="text-xs font-semibold">Lumen Store</div>
+          <div className="text-[10px] text-emerald-100/80">WhatsApp Business · {event.customer_phone}</div>
+        </div>
+      </div>
+      <div className="px-4 py-4">
+        <div className="ml-auto max-w-[90%] rounded-2xl rounded-tr-sm bg-[#005c4b] px-3 py-2 text-sm leading-relaxed text-white">
+          {brief.whatsapp}
+        </div>
+        {settled && (
+          <p className={`mt-3 text-[11px] ${blocked ? "text-amber-300" : "text-emerald-400"}`}>
+            {blocked ? "Preview only — live send was blocked by a guardrail" : "Mock delivered on WhatsApp"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CallPreview({
+  brief, event, beat, settled,
+}: {
+  brief: ReturnType<typeof buildRecoverBrief>;
+  event: RecoveryEvent;
+  beat: number;
+  settled?: boolean;
+}) {
+  const shown = brief.callBeats.slice(0, Math.max(beat, settled ? brief.callBeats.length : 0));
+  return (
+    <div className="overflow-hidden rounded-xl border border-indigo-500/20 bg-[#0e1018]">
+      <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20">
+          <Volume2 className="h-4 w-4 text-indigo-300" />
+        </div>
+        <div>
+          <div className="text-sm font-medium text-white">Live agent call · {event.customer_name}</div>
+          <div className="text-[11px] text-gray-500">{event.customer_phone} · Hinglish recovery</div>
+        </div>
+        {!settled && <span className="ml-auto animate-pulse text-[11px] text-emerald-400">Connected</span>}
+      </div>
+      <div className="space-y-2 px-4 py-3">
+        {shown.map((line, i) => (
+          <div key={i} className={`flex ${line.who === "agent" ? "justify-start" : "justify-end"}`}>
+            <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+              line.who === "agent"
+                ? "rounded-tl-sm bg-white/10 text-gray-100"
+                : "rounded-tr-sm bg-indigo-600 text-white"
+            }`}>
+              <div className="mb-0.5 text-[10px] uppercase tracking-wide opacity-60">{line.who}</div>
+              {line.text}
+            </div>
+          </div>
+        ))}
+        {brief.offer && settled && (
+          <p className="pt-1 text-[11px] text-amber-300">Offer on the table: {brief.offer}</p>
+        )}
+      </div>
     </div>
   );
 }

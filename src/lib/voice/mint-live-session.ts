@@ -97,7 +97,7 @@ export async function mintLiveSession(body: {
   }
 
   const first = attempts[0];
-  if (!first) {
+  if (!token || !first) {
     return {
       error: "Gemini Live websocket unavailable",
       detail: "Ephemeral token mint failed. Call audio will use server TTS instead of a browser Live socket.",

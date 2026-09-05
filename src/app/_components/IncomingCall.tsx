@@ -62,6 +62,9 @@ export function IncomingCall({
   customerName,
   onClose,
   onCouponApplied,
+  mode = "inbound",
+  callerNumber,
+  callerDisplay,
 }: {
   scenario: string;
   amountPaise: number;
@@ -69,6 +72,9 @@ export function IncomingCall({
   customerName: string;
   onClose: () => void;
   onCouponApplied?: (coupon: AppliedCoupon) => void;
+  mode?: "inbound" | "outbound";
+  callerNumber?: string;
+  callerDisplay?: string;
 }) {
   const [phase, setPhase] = useState<"ringing" | "talking" | "ended">("ringing");
   const [maxDays, setMaxDays] = useState<number>(5);
@@ -84,6 +90,8 @@ export function IncomingCall({
   const [connecting, setConnecting] = useState(false);
   const [llmOn, setLlmOn] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [lineNumber, setLineNumber] = useState(callerNumber ?? "");
+  const [lineDisplay, setLineDisplay] = useState(callerDisplay ?? "Lumen Store");
   const sessionId = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -94,6 +102,7 @@ export function IncomingCall({
   const agentDraft = useRef("");
   const userDraft = useRef("");
   const scroller = useRef<HTMLDivElement>(null);
+  const outboundPlaced = useRef(false);
 
   useEffect(() => {
     fetch("/api/guardrails")
@@ -106,11 +115,31 @@ export function IncomingCall({
       .then(r => r.json())
       .then((d: { configured?: boolean }) => setLlmOn(Boolean(d.configured)))
       .catch(() => {});
-  }, []);
+    if (!callerNumber) {
+      fetch("/api/agent-line")
+        .then(r => r.json())
+        .then((d: { config?: { caller_number?: string; caller_display?: string } }) => {
+          if (d.config?.caller_number) setLineNumber(d.config.caller_number);
+          if (d.config?.caller_display) setLineDisplay(d.config.caller_display);
+        })
+        .catch(() => {});
+    }
+  }, [callerNumber, callerDisplay]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [lines]);
+
+  useEffect(() => {
+    if (mode !== "outbound" || outboundPlaced.current) return;
+    const t = window.setTimeout(() => {
+      if (outboundPlaced.current) return;
+      outboundPlaced.current = true;
+      void answer({ mic: llmOn });
+    }, 1600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, llmOn]);
 
   useEffect(() => {
     return () => {
@@ -406,19 +435,29 @@ export function IncomingCall({
               <Phone className="h-8 w-8 text-emerald-400" />
             </div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-400">
-              Incoming call
+              {mode === "outbound" ? "Placing agent call" : "Incoming call"}
             </div>
-            <div className="mt-2 text-xl font-semibold">Lumen Store</div>
+            <div className="mt-2 text-xl font-semibold">
+              {mode === "outbound" ? customerName : (lineDisplay || "Lumen Store")}
+            </div>
             <div className="mt-1 text-sm text-white/55">
-              {scenario === "abandoned_cart"
-                ? "About the cart you left · coupon waiting"
-                : "AI recovery agent · about your payment"}
+              {mode === "outbound"
+                ? `From ${lineNumber || "your agent line"}`
+                : scenario === "abandoned_cart"
+                  ? "About the cart you left · coupon waiting"
+                  : "AI recovery agent · about your payment"}
             </div>
+            {mode === "inbound" && lineNumber && (
+              <div className="mt-2 font-mono text-xs text-white/45">{lineNumber}</div>
+            )}
             <div className="mt-4 rounded-full bg-white/8 px-3 py-1.5 text-[11px] text-white/70">
-              {scenario === "abandoned_cart" ? "Cart save call" : `Policy window ${maxDays} days`}
-              {llmOn ? " · Gemini Live 2.5 voice" : " · add GEMINI_API_KEY for live voice"}
+              {mode === "outbound"
+                ? (llmOn ? "Connecting live voice…" : "Connecting agent…")
+                : (scenario === "abandoned_cart" ? "Cart save call" : `Policy window ${maxDays} days`)}
+              {mode === "inbound" && (llmOn ? " · Gemini Live 2.5 voice" : " · add GEMINI_API_KEY for live voice")}
             </div>
           </div>
+          {mode === "inbound" ? (
           <div className="grid grid-cols-2 gap-3 px-6 pb-8">
             <button
               onClick={hangUp}
@@ -439,6 +478,19 @@ export function IncomingCall({
               {llmOn ? "Answer live" : "Answer"}
             </button>
           </div>
+          ) : (
+          <div className="px-6 pb-8">
+            <button
+              onClick={hangUp}
+              className="flex w-full flex-col items-center gap-2 rounded-2xl bg-white/8 py-4 text-xs font-medium text-white/80 hover:bg-white/12"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500">
+                <PhoneOff className="h-5 w-5" />
+              </span>
+              Cancel
+            </button>
+          </div>
+          )}
         </div>
       </div>
     );
@@ -471,9 +523,9 @@ export function IncomingCall({
             <Phone className="h-4 w-4 text-emerald-400" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold">AI recovery agent</div>
+            <div className="text-sm font-semibold">{mode === "outbound" ? customerName : "AI recovery agent"}</div>
             <div className="text-[11px] text-white/45">
-              Lumen Store · {connecting
+              {lineDisplay}{lineNumber ? ` · ${lineNumber}` : ""} · {connecting
                 ? "connecting Gemini Live…"
                 : live
                   ? "live · Gemini 2.5 native audio"

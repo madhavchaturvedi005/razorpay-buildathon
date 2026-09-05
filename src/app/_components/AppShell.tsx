@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, ListChecks, ScrollText, ShieldCheck,
-  Sparkles, CircleDot, Phone, Tag,
+  Sparkles, CircleDot, Phone, Tag, PhoneCall,
 } from "lucide-react";
 import { PerspectiveSwitch } from "./PerspectiveSwitch";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/events", label: "Recovery Queue", icon: ListChecks },
+  { href: "/agent-line", label: "Agent Line", icon: PhoneCall },
   { href: "/voice", label: "Voice + PTP", icon: Phone },
   { href: "/policies", label: "Policies & Discounts", icon: Tag },
   { href: "/audit", label: "Audit Trail", icon: ScrollText },

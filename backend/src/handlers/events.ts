@@ -18,8 +18,15 @@ export function mountEvents(app: Hono) {
     return c.json({ events, counts: db.countEvents(), limit, offset });
   });
 
+  app.get("/api/events/:id", c => {
+    const event = db.getEvent(c.req.param("id"));
+    if (!event) return c.json({ error: "Event not found" }, 404);
+    return c.json({ event });
+  });
+
   app.post("/api/events/:id/recover", async c => {
     const id = c.req.param("id");
+    const body = await c.req.json().catch(() => ({})) as { channel?: string; comment?: string };
     const event = db.getEvent(id);
     if (!event) return c.json({ error: "Event not found" }, 404);
     if (!isAtRisk(event)) {
@@ -53,6 +60,8 @@ export function mountEvents(app: Hono) {
       execution: result,
       latest_audit: auditLogs[0] ?? null,
       updated_event: updatedEvent,
+      operator_channel: body.channel ?? null,
+      operator_comment: body.comment ?? null,
     });
   });
 }

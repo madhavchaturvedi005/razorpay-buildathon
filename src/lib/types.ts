@@ -230,6 +230,34 @@ export interface CallSession {
   updated_at: string;
 }
 
+export interface AgentLineConfig {
+  caller_name: string;
+  caller_number: string;
+  caller_display: string;
+  sip_enabled: boolean;
+  plan_id: string;
+  plan_label: string;
+  minutes_included: number;
+  calls_included: number;
+  renews_on: string;
+  price_paise: number;
+  updated_at: string;
+}
+
+export const DEFAULT_AGENT_LINE: AgentLineConfig = {
+  caller_name: "Lumen Recover",
+  caller_number: "+91 80 4567 2100",
+  caller_display: "Lumen Store",
+  sip_enabled: true,
+  plan_id: "voice_growth",
+  plan_label: "Recovery Voice · Growth",
+  minutes_included: 500,
+  calls_included: 2000,
+  renews_on: "2026-10-05",
+  price_paise: 499900,
+  updated_at: "2026-09-05T00:00:00.000Z",
+};
+
 export interface AuditLog {
   log_id: string;
   event_id: string;

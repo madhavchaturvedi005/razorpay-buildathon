@@ -11,10 +11,12 @@ import type {
   RecoveryPolicy,
   PolicyOffer,
   Discount,
+  AgentLineConfig,
 } from "./types";
-import { DEFAULT_GUARDRAIL_CONFIG as DEFAULT_CONFIG } from "./types";
+import { DEFAULT_GUARDRAIL_CONFIG as DEFAULT_CONFIG, DEFAULT_AGENT_LINE } from "./types";
 import { canonicalAudit, GENESIS_HASH, hashRow, verifyChain } from "./engine/ledger";
 import { DEFAULT_POLICIES, DEFAULT_DISCOUNTS } from "./engine/policies";
+import { MOCK_CALLS } from "./engine/agent-line";
 
 // ─── Database path ────────────────────────────────────────────────────────────
 const DB_DIR = path.join(process.cwd(), "data");
@@ -37,6 +39,7 @@ function getDb(): Database.Database {
   migrateSchema(_db);
   initGuardrailConfig(_db);
   initPolicies(_db);
+  initAgentLine(_db);
   return _db;
 }
 
@@ -191,6 +194,23 @@ function migrateSchema(db: Database.Database) {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_line (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      caller_name TEXT NOT NULL,
+      caller_number TEXT NOT NULL,
+      caller_display TEXT NOT NULL,
+      sip_enabled INTEGER NOT NULL DEFAULT 1,
+      plan_id TEXT NOT NULL,
+      plan_label TEXT NOT NULL,
+      minutes_included INTEGER NOT NULL,
+      calls_included INTEGER NOT NULL,
+      renews_on TEXT NOT NULL,
+      price_paise INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
   backfillHashes(db);
 }
 
@@ -267,6 +287,54 @@ function initPolicies(db: Database.Database) {
     );
     for (const d of DEFAULT_DISCOUNTS) {
       ins.run(d.id, d.product, d.percent_off, d.code, d.min_cart_paise, d.valid_hours, d.trigger, d.enabled ? 1 : 0, d.created_at);
+    }
+  }
+}
+
+function initAgentLine(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_line (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      caller_name TEXT NOT NULL,
+      caller_number TEXT NOT NULL,
+      caller_display TEXT NOT NULL,
+      sip_enabled INTEGER NOT NULL DEFAULT 1,
+      plan_id TEXT NOT NULL,
+      plan_label TEXT NOT NULL,
+      minutes_included INTEGER NOT NULL,
+      calls_included INTEGER NOT NULL,
+      renews_on TEXT NOT NULL,
+      price_paise INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  const existing = db.prepare("SELECT id FROM agent_line WHERE id = 1").get();
+  if (!existing) {
+    const c = DEFAULT_AGENT_LINE;
+    db.prepare(`
+      INSERT INTO agent_line
+        (id, caller_name, caller_number, caller_display, sip_enabled, plan_id, plan_label,
+         minutes_included, calls_included, renews_on, price_paise, updated_at)
+      VALUES (1,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      c.caller_name, c.caller_number, c.caller_display, c.sip_enabled ? 1 : 0,
+      c.plan_id, c.plan_label, c.minutes_included, c.calls_included,
+      c.renews_on, c.price_paise, c.updated_at,
+    );
+  }
+  const mocks = db.prepare("SELECT COUNT(*) as c FROM call_sessions WHERE session_id LIKE 'mock_call_%'").get() as { c: number };
+  if (mocks.c === 0) {
+    const ins = db.prepare(`
+      INSERT INTO call_sessions
+        (session_id, event_id, customer_name, scenario, live_llm, status, outcome, turns, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `);
+    for (const s of MOCK_CALLS) {
+      ins.run(
+        s.session_id, s.event_id, s.customer_name, s.scenario,
+        s.live_llm ? 1 : 0, s.status, s.outcome,
+        JSON.stringify(s.turns), s.created_at, s.updated_at,
+      );
     }
   }
 }
@@ -635,6 +703,42 @@ export const db = {
 
   deleteDiscount(id: string): void {
     getDb().prepare("DELETE FROM discounts WHERE id = ?").run(id);
+  },
+
+  getAgentLine(): AgentLineConfig {
+    initAgentLine(getDb());
+    const r = getDb().prepare("SELECT * FROM agent_line WHERE id = 1").get() as Record<string, unknown>;
+    return {
+      caller_name: String(r.caller_name),
+      caller_number: String(r.caller_number),
+      caller_display: String(r.caller_display),
+      sip_enabled: Boolean(r.sip_enabled),
+      plan_id: String(r.plan_id),
+      plan_label: String(r.plan_label),
+      minutes_included: Number(r.minutes_included),
+      calls_included: Number(r.calls_included),
+      renews_on: String(r.renews_on),
+      price_paise: Number(r.price_paise),
+      updated_at: String(r.updated_at),
+    };
+  },
+
+  updateAgentLine(patch: Partial<Pick<AgentLineConfig, "caller_name" | "caller_number" | "caller_display" | "sip_enabled">>): AgentLineConfig {
+    const cur = this.getAgentLine();
+    const next: AgentLineConfig = { ...cur, updated_at: new Date().toISOString() };
+    if (typeof patch.caller_name === "string") next.caller_name = patch.caller_name;
+    if (typeof patch.caller_number === "string") next.caller_number = patch.caller_number;
+    if (typeof patch.caller_display === "string") next.caller_display = patch.caller_display;
+    if (typeof patch.sip_enabled === "boolean") next.sip_enabled = patch.sip_enabled;
+    getDb().prepare(`
+      UPDATE agent_line SET
+        caller_name = ?, caller_number = ?, caller_display = ?, sip_enabled = ?, updated_at = ?
+      WHERE id = 1
+    `).run(
+      next.caller_name, next.caller_number, next.caller_display,
+      next.sip_enabled ? 1 : 0, next.updated_at,
+    );
+    return next;
   },
 };
 

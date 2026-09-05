@@ -9,6 +9,7 @@ import { mountPolicies } from "./handlers/policies";
 import { mountSeed } from "./handlers/seed";
 import { mountVoice } from "./handlers/voice";
 import { mountWebhooks } from "./handlers/webhooks";
+import { mountAgentLine } from "./handlers/agent-line";
 
 export function createApp() {
   const app = new Hono();
@@ -40,6 +41,7 @@ export function createApp() {
   mountPay(app);
   mountPolicies(app);
   mountWebhooks(app);
+  mountAgentLine(app);
 
   app.notFound(c => c.json({ error: "Not found" }, 404));
   app.onError((err, c) => {

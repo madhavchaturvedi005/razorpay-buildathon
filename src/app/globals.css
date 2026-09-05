@@ -69,4 +69,10 @@ body::before {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-up { animation: fade-up 0.4s ease both; }
+.animate-fade-up { animation: fade-up 0.4s ease; }
+
+@keyframes recover-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.recover-modal { animation: recover-in 0.22s ease both; }

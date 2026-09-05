@@ -11,6 +11,8 @@ import {
   Sparkles, Zap, RefreshCw, Database, ChevronRight, Clock, Phone,
 } from "lucide-react";
 import { inr, EVENT_TYPE_LABELS, DECLINE_LABELS, INTERVENTION_LABELS, label } from "@/lib/ui/format";
+import { RecoverModal } from "./_components/RecoverModal";
+import type { RecoveryEvent } from "@/lib/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Analytics {
@@ -101,6 +103,7 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [recoverEvent, setRecoverEvent] = useState<RecoveryEvent | null>(null);
 
   const load = useCallback(async () => {
     const [a, m] = await Promise.all([
@@ -129,8 +132,9 @@ export default function OverviewPage() {
   async function runRecovery(id: string) {
     setRunningId(id);
     try {
-      await fetch(`/api/events/${id}/recover`, { method: "POST" });
-      await load();
+      const res = await fetch(`/api/events/${id}`);
+      const data = await res.json();
+      if (data.event) setRecoverEvent(data.event as RecoveryEvent);
     } finally {
       setRunningId(null);
     }
@@ -437,6 +441,14 @@ export default function OverviewPage() {
           )}
         </div>
       </div>
+
+      {recoverEvent && (
+        <RecoverModal
+          event={recoverEvent}
+          onClose={() => setRecoverEvent(null)}
+          onComplete={() => { load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -537,7 +549,7 @@ function QueueRow({
         <button onClick={onPreview} className="btn-ghost !py-1.5 !px-3 text-xs">Preview</button>
         <button onClick={onRun} disabled={running} className="btn-primary !py-1.5 !px-3 text-xs">
           {running ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-          {running ? "Running" : "Recover"}
+          {running ? "Opening" : "Recover"}
         </button>
       </div>
     </div>

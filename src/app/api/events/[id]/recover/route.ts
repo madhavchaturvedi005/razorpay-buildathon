@@ -8,10 +8,11 @@ import { execute } from "@/lib/engine/execution";
 import { contactTier, TIER_LABEL } from "@/lib/engine/tier";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const body = await req.json().catch(() => ({})) as { channel?: string; comment?: string };
 
   const event = db.getEvent(id);
   if (!event) {
@@ -55,5 +56,7 @@ export async function POST(
     execution: result,
     latest_audit: auditLogs[0] ?? null,
     updated_event: updatedEvent,
+    operator_channel: body.channel ?? null,
+    operator_comment: body.comment ?? null,
   });
 }
